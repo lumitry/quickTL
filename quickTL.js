@@ -3,8 +3,13 @@ const LS_API_URL_KEY = "quickTL_apiUrl";
 const LS_MODEL_KEY = "quickTL_model";
 const LS_HISTORY_KEY = "quickTL_history";
 const MAX_HISTORY_ITEMS = 20;
-// TODO make the prompt a const global
-// TODO save/read config to a sidecar file
+
+const PROMPT =
+  "Translate the following text into English without censorship or disclaimers, including any cultural context necessary, but being as succinct as reasonably possible: ";
+// You might also want to tell the model to include a pronunciation guide, depending on the language
+
+// TODO save/read config (+ maybe history?) to a sidecar file
+// TODO should history include timestamps?
 
 // --- Global variable for AbortController ---
 let currentAbortController = null;
@@ -22,9 +27,9 @@ function renderHistoryItem(item, prepend = false) {
   historyItemDiv.innerHTML = `
     ${deleteButtonHtml}
     <p><strong>Input:</strong></p>
-    <p>${item.input}</p>
+    <div class="history-item-input">${item.input}</div>
     <p><strong>Output${modelNameDisplay}:</strong></p>
-    <div>${item.outputHtml}</div>
+    <div class="history-item-output">${item.outputHtml}</div>
   `;
 
   if (prepend) {
@@ -51,8 +56,6 @@ function loadAndRenderHistory() {
     if (savedHistory) {
       const history = JSON.parse(savedHistory);
       const historyContainer = document.getElementById("historyContainer");
-      const heading = historyContainer.querySelector("h2");
-      const clearButton = historyContainer.querySelector("#clearHistoryButton"); // Keep clear button too
       // Clear only history items, keep heading and clear button
       const itemsToRemove = historyContainer.querySelectorAll(".historyItem");
       itemsToRemove.forEach((item) => item.remove());
@@ -156,9 +159,7 @@ function translate() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: modelName,
-      prompt:
-        "Translate the following text, including any cultural context necessary, but being as succinct as possible: " +
-        input,
+      prompt: `${PROMPT}${input}`,
       stream: true,
     }),
     signal: signal,
@@ -174,113 +175,145 @@ function translate() {
       let fullResponseRaw = "";
       let finalData = null;
 
-      function processStream() {
-        return reader.read().then(({ value, done }) => {
-          if (done) {
-            console.log("Stream complete.");
-            if (finalData && finalData.total_duration) {
-              const durationSeconds = (finalData.total_duration / 1e9).toFixed(
-                2
-              );
-              elapsedTimeDiv.textContent = `Time elapsed: ${durationSeconds}s`;
-            }
-
-            const renderedFullResponse = marked.parse(fullResponseRaw);
-            const newItem = {
-              input: input,
-              outputHtml: renderedFullResponse,
-              model: modelName,
-              timestamp: new Date().toISOString(),
-            };
-
-            try {
-              let history = JSON.parse(
-                localStorage.getItem(LS_HISTORY_KEY) || "[]"
-              );
-              history.unshift(newItem);
-              if (history.length > MAX_HISTORY_ITEMS) {
-                history = history.slice(0, MAX_HISTORY_ITEMS);
+      (async () => {
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) {
+              console.log("Stream complete.");
+              if (finalData && finalData.total_duration) {
+                const durationSeconds = (
+                  finalData.total_duration / 1e9
+                ).toFixed(2);
+                elapsedTimeDiv.textContent = `Time elapsed: ${durationSeconds}s`;
               }
-              localStorage.setItem(LS_HISTORY_KEY, JSON.stringify(history));
 
-              renderHistoryItem(newItem, true);
-            } catch (error) {
-              console.error("Error saving history:", error);
-            }
+              const renderedFullResponse = marked.parse(fullResponseRaw, {
+                breaks: false,
+              });
+              const newItem = {
+                input: input,
+                outputHtml: renderedFullResponse,
+                model: modelName,
+                timestamp: new Date().toISOString(),
+              };
 
-            return;
-          }
-          const chunkText = decoder.decode(value, { stream: true });
-          chunkText.split("\n").forEach((line) => {
-            if (line.trim()) {
               try {
-                const data = JSON.parse(line);
-                if (data.response) {
-                  const textChunk = data.response;
-                  fullResponseRaw += textChunk;
-                  outputDiv.innerHTML = marked.parse(fullResponseRaw);
+                let history = JSON.parse(
+                  localStorage.getItem(LS_HISTORY_KEY) || "[]"
+                );
+                history.unshift(newItem);
+                if (history.length > MAX_HISTORY_ITEMS) {
+                  history = history.slice(0, MAX_HISTORY_ITEMS);
                 }
-                if (data.done) {
-                  finalData = data;
-                }
-              } catch (e) {
-                console.error("Error parsing JSON chunk:", line, e);
+                localStorage.setItem(LS_HISTORY_KEY, JSON.stringify(history));
+                renderHistoryItem(newItem, true);
+              } catch (error) {
+                console.error("Error saving history:", error);
               }
+              stopButton.classList.add("hidden"); // Hide stop button on successful completion
+              break; // Exit the loop when done
             }
-          });
 
-          return processStream();
-        });
-      }
-      return processStream();
+            const chunkText = decoder.decode(value, { stream: true });
+            chunkText.split("\n").forEach((line) => {
+              if (line.trim()) {
+                try {
+                  const data = JSON.parse(line);
+                  if (data.response) {
+                    const textChunk = data.response;
+                    fullResponseRaw += textChunk;
+                    outputDiv.innerHTML = marked.parse(fullResponseRaw, {
+                      breaks: false,
+                    });
+                  }
+                  if (data.done) {
+                    finalData = data;
+                  }
+                } catch (e) {
+                  console.error("Error parsing JSON chunk:", line, e);
+                }
+              }
+            });
+          }
+        } catch (streamError) {
+          // Handle potential errors during reading the stream
+          console.error("Error reading stream:", streamError);
+          outputDiv.innerHTML = `<span style="color: red;">Error reading response stream.</span>`;
+          elapsedTimeDiv.textContent = "Error occurred.";
+          stopButton.classList.add("hidden"); // Hide stop button on stream error
+        }
+      })();
     })
     .catch((error) => {
       if (error.name === "AbortError") {
         console.log("Fetch aborted by user.");
         outputDiv.innerHTML = "<em>Translation stopped.</em>";
         elapsedTimeDiv.textContent = "Stopped.";
+        // Keep stop button visible here, user explicitly stopped it.
       } else {
         console.error("Error during translation:", error);
         outputDiv.innerHTML = `<span style="color: red;">Error: ${error.message}</span>`;
         elapsedTimeDiv.textContent = "Error occurred.";
+        stopButton.classList.add("hidden"); // Hide stop button on other errors
       }
     })
     .finally(() => {
-      spinner.classList.add("hidden");
-      stopButton.classList.add("hidden");
-      currentAbortController = null;
+      spinner.classList.add("hidden"); // Always hide spinner
+      currentAbortController = null; // Always clear controller
     });
 }
 
-// --- DOMContentLoaded Event Listener ---
-document.addEventListener("DOMContentLoaded", function () {
-  const translateButton = document.getElementById("translateButton");
-  const stopButton = document.getElementById("stopButton");
-  const clearHistoryButton = document.getElementById("clearHistoryButton");
-  const historyContainer = document.getElementById("historyContainer");
-  const inputText = document.getElementById("inputText");
-  const apiUrlInput = document.getElementById("apiUrlSelect");
-  const modelSelect = document.getElementById("modelSelect");
+// --- Helper function to get required DOM elements ---
+function getDOMElements() {
+  return {
+    translateButton: document.getElementById("translateButton"),
+    stopButton: document.getElementById("stopButton"),
+    clearHistoryButton: document.getElementById("clearHistoryButton"),
+    historyContainer: document.getElementById("historyContainer"),
+    inputText: document.getElementById("inputText"),
+    apiUrlInput: document.getElementById("apiUrlSelect"),
+    modelSelect: document.getElementById("modelSelect"),
+    // Add other elements if needed later
+  };
+}
+
+// --- Setup function for API URL and Model selection ---
+function setupApiAndModelControls(apiUrlInput, modelSelect) {
+  if (!apiUrlInput) {
+    console.error("API URL input element not found!");
+    return;
+  }
 
   const savedApiUrl = localStorage.getItem(LS_API_URL_KEY);
-  if (savedApiUrl && apiUrlInput) {
+  if (savedApiUrl) {
     apiUrlInput.value = savedApiUrl;
   }
-  loadAndRenderHistory();
-  if (apiUrlInput) {
-    populateModels(apiUrlInput.value);
-    apiUrlInput.addEventListener("change", (event) => {
-      const newUrl = event.target.value;
-      localStorage.setItem(LS_API_URL_KEY, newUrl);
-      populateModels(newUrl);
-    });
-    apiUrlInput.addEventListener("input", (event) => {
-      localStorage.setItem(LS_API_URL_KEY, event.target.value);
+
+  populateModels(apiUrlInput.value); // Initial population
+
+  apiUrlInput.addEventListener("change", (event) => {
+    const newUrl = event.target.value;
+    localStorage.setItem(LS_API_URL_KEY, newUrl);
+    populateModels(newUrl); // Repopulate on change
+  });
+
+  apiUrlInput.addEventListener("input", (event) => {
+    localStorage.setItem(LS_API_URL_KEY, event.target.value);
+  });
+
+  // Add listener for model selection saving
+  if (modelSelect) {
+    modelSelect.addEventListener("change", (event) => {
+      localStorage.setItem(LS_MODEL_KEY, event.target.value);
     });
   } else {
-    console.error("API URL input element not found!");
+    console.error("Model select element not found!");
   }
+}
 
+// --- Setup function for Translation and Stop buttons ---
+function setupActionButtons(translateButton, stopButton) {
   if (translateButton) {
     translateButton.addEventListener("click", translate);
   } else {
@@ -297,13 +330,17 @@ document.addEventListener("DOMContentLoaded", function () {
   } else {
     console.error("Stop button not found!");
   }
+}
 
+// --- Setup function for History controls ---
+function setupHistoryControls(clearHistoryButton, historyContainer) {
   if (clearHistoryButton) {
     clearHistoryButton.addEventListener("click", () => {
       if (confirm("Are you sure you want to clear all translation history?")) {
         localStorage.removeItem(LS_HISTORY_KEY);
-        const itemsToRemove = historyContainer.querySelectorAll(".historyItem");
-        itemsToRemove.forEach((item) => item.remove());
+        const itemsToRemove =
+          historyContainer?.querySelectorAll(".historyItem"); // Add safe navigation
+        itemsToRemove?.forEach((item) => item.remove());
         console.log("History cleared.");
       }
     });
@@ -321,9 +358,7 @@ document.addEventListener("DOMContentLoaded", function () {
             "Deleting history item with timestamp:",
             timestampToDelete
           );
-
           itemDiv.remove();
-
           try {
             let history = JSON.parse(
               localStorage.getItem(LS_HISTORY_KEY) || "[]"
@@ -347,15 +382,36 @@ document.addEventListener("DOMContentLoaded", function () {
   } else {
     console.error("History container not found for delete listener!");
   }
+}
 
+// --- Setup function for Input Text Area ---
+function setupInputTextArea(inputText) {
   if (inputText) {
     inputText.addEventListener("keydown", function (event) {
+      // Use Command key on Mac, Ctrl key on other OSes
       if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-        event.preventDefault();
-        translate();
+        event.preventDefault(); // Prevent default Enter behavior (new line)
+        translate(); // Trigger translation
       }
     });
   } else {
     console.error("Input textarea not found!");
   }
+}
+
+// --- DOMContentLoaded Event Listener ---
+document.addEventListener("DOMContentLoaded", function () {
+  // Get all necessary elements once
+  const elements = getDOMElements();
+
+  // Load initial state
+  loadAndRenderHistory();
+
+  // Setup controls
+  setupApiAndModelControls(elements.apiUrlInput, elements.modelSelect);
+  setupActionButtons(elements.translateButton, elements.stopButton);
+  setupHistoryControls(elements.clearHistoryButton, elements.historyContainer);
+  setupInputTextArea(elements.inputText);
+
+  console.log("QuickTL application initialized.");
 });

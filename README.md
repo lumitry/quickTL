@@ -29,10 +29,10 @@ Once it's done, the translation will appear in the history section below the out
 
 - [ ] Refactor for cleaner code
 - [ ] make the styling less "web 1.0"-y
-  - [ ] add breakpoints for mobile/browser sidebar width so that the title doesn't take up three lines
+  - [/] add breakpoints for mobile/browser sidebar width so that the title doesn't take up three lines
   - [ ] dark mode
-  - [ ] make the whitespace added by marked.js smaller
-- [ ] Add a button to copy the translation to the clipboard
+  - [x] make the whitespace added by marked.js smaller
+- [ ] Add a button to copy the translation to the clipboard (both in output and history)
 - [ ] File persistence
 - [ ] Vision?? Might be simple if it's just turning the image into base64
 - [ ] Language selection (right now, the model has to figure that out on its own)

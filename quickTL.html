@@ -9,6 +9,18 @@
     <script src="quickTL.js" defer></script>
     <style>
       /* TODO: refactor css? */
+
+      /* Basic styles */
+      body {
+        font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
+          "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+        background-color: #f4f4f4;
+        color: #333;
+      }
+      h1 {
+        text-align: center;
+      }
+
       .container {
         max-width: 600px;
         margin: 20px auto;
@@ -43,16 +55,9 @@
       .historyItem {
         margin-bottom: 15px;
         padding: 10px;
-        background-color: #f9f9f9;
-        border: 1px solid #eee;
+        background-color: #dbdbdb;
+        border: 1px solid #9a9a9a;
         border-radius: 4px;
-      }
-      .historyItem p {
-        margin: 5px 0;
-      }
-      .historyItem strong {
-        display: block;
-        margin-bottom: 3px;
       }
       /* Style for the output div */
       .output-area {
@@ -64,6 +69,20 @@
         background-color: #f9f9f9; /* Slightly different background */
         white-space: pre-wrap; /* Preserve whitespace and wrap lines */
         box-sizing: border-box; /* Include padding/border in width */
+        line-height: 1.3; /* Adjust this value (e.g., 1.2, 1.4) to control spacing */
+      }
+
+      /* Explicitly reduce margins for paragraphs inside the output area */
+      .output-area p {
+        margin-block-start: 0em; /* Adjust as needed */
+        margin-block-end: 0em; /* Adjust as needed */
+      }
+      /* Reduce list spacing slightly */
+      .output-area ul,
+      .output-area ol {
+        margin-block-start: 0.3em;
+        margin-block-end: 0.3em;
+        padding-inline-start: 25px; /* Adjust default list indent */
       }
 
       /* Styles for new select elements */
@@ -96,6 +115,43 @@
         background-color: #f44336; /* Red on hover */
         color: white;
       }
+      .history-item-input {
+        padding: 5px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        background-color: #e9e9e9;
+      }
+      .history-item-output {
+        padding: 5px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        background-color: #e9e9e9;
+        line-height: 1.3; /* Match .output-area */
+      }
+      .history-item-output p {
+        margin-block-start: 0.2em;
+        margin-block-end: 0.2em;
+      }
+      .history-item-output ul,
+      .history-item-output ol {
+        margin-block-start: 0.3em;
+        margin-block-end: 0.3em;
+        padding-inline-start: 25px;
+      }
+
+      /* Responsive design */
+      @media (max-width: 600px) {
+        .container {
+          padding: 10px;
+        }
+        textarea,
+        .output-area {
+          min-height: 80px; /* Adjusted for smaller screens */
+        }
+        h1 {
+          font-size: 1.4em; /* Adjusted for smaller screens */
+        }
+      }
     </style>
   </head>
   <body>
@@ -120,10 +176,11 @@
       <!-- Wrap buttons for easier layout -->
       <div style="position: relative; margin-bottom: 10px">
         <button id="translateButton">Translate</button>
+        <!-- it's not a spinner, but it's the thought that counts -->
         <span id="loadingSpinner" class="hidden" style="margin-left: 10px"
           >Loading...</span
         >
-        <!-- Added Stop button, initially hidden -->
+        <!-- Stop button, initially hidden -->
         <button
           id="stopButton"
           class="hidden"
@@ -138,9 +195,9 @@
         class="output-area"
         placeholder="Translation will appear here"
       ></div>
-      <!-- Added element for elapsed time -->
+      <!-- Elapsed time elmt -->
       <div id="elapsedTime"></div>
-      <!-- Added container for history -->
+      <!-- History container -->
       <div id="historyContainer">
         <div
           style="
@@ -150,7 +207,7 @@
           "
         >
           <h2>History</h2>
-          <!-- Added Clear History button -->
+          <!-- Clear History button -->
           <button
             id="clearHistoryButton"
             style="margin-left: 15px; font-size: 0.8em"
