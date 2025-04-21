@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QuickTL</title>
+    <!-- Include marked.js from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="quickTL.js" defer></script>
+    <style>
+      /* TODO: refactor css? */
+      .container {
+        max-width: 600px;
+        margin: 20px auto;
+        padding: 20px;
+      }
+      textarea {
+        width: 100%;
+        margin: 10px 0;
+        padding: 10px;
+        min-height: 100px;
+      }
+      #loadingSpinner {
+        margin: 10px 0;
+        font-style: italic;
+        color: grey;
+      }
+      .hidden {
+        display: none;
+      }
+      /* Added styles for time and history */
+      #elapsedTime {
+        font-size: 0.9em;
+        color: #555;
+        margin-top: -5px; /* Adjust spacing */
+        margin-bottom: 15px;
+      }
+      #historyContainer {
+        margin-top: 20px;
+        border-top: 1px solid #ccc;
+        padding-top: 10px;
+      }
+      .historyItem {
+        margin-bottom: 15px;
+        padding: 10px;
+        background-color: #f9f9f9;
+        border: 1px solid #eee;
+        border-radius: 4px;
+      }
+      .historyItem p {
+        margin: 5px 0;
+      }
+      .historyItem strong {
+        display: block;
+        margin-bottom: 3px;
+      }
+      /* Style for the output div */
+      .output-area {
+        width: 100%;
+        margin: 10px 0;
+        padding: 10px;
+        min-height: 100px;
+        border: 1px solid #ccc; /* Mimic textarea border */
+        background-color: #f9f9f9; /* Slightly different background */
+        white-space: pre-wrap; /* Preserve whitespace and wrap lines */
+        box-sizing: border-box; /* Include padding/border in width */
+      }
+
+      /* Styles for new select elements */
+      label {
+        margin-right: 5px;
+        font-weight: bold;
+      }
+      select,
+      input {
+        margin-bottom: 10px; /* Add some space below dropdowns */
+        padding: 5px;
+      }
+      /* Adjust container layout if needed */
+      .container div {
+        margin-bottom: 10px; /* Space between rows */
+      }
+      /* Style for history item delete button */
+      .delete-history-item {
+        float: right;
+        background-color: #ddd;
+        color: #333;
+        border: none;
+        padding: 2px 5px;
+        cursor: pointer;
+        font-size: 0.8em;
+        border-radius: 3px;
+        margin-left: 10px;
+      }
+      .delete-history-item:hover {
+        background-color: #f44336; /* Red on hover */
+        color: white;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>QuickTL - Simple Translation</h1>
+
+      <!-- API URL Selection -->
+      <div>
+        <label for="apiUrlSelect">API URL:</label>
+        <input id="apiUrlSelect" type="text" value="http://localhost:11434" />
+      </div>
+
+      <!-- Model Selection -->
+      <div>
+        <label for="modelSelect">Model:</label>
+        <select id="modelSelect">
+          <option value="">Loading models...</option>
+        </select>
+      </div>
+
+      <textarea id="inputText" placeholder="Enter text to translate"></textarea>
+      <!-- Wrap buttons for easier layout -->
+      <div style="position: relative; margin-bottom: 10px">
+        <button id="translateButton">Translate</button>
+        <span id="loadingSpinner" class="hidden" style="margin-left: 10px"
+          >Loading...</span
+        >
+        <!-- Added Stop button, initially hidden -->
+        <button
+          id="stopButton"
+          class="hidden"
+          style="float: right; background-color: #f44336; color: white"
+        >
+          Stop
+        </button>
+      </div>
+
+      <div
+        id="outputText"
+        class="output-area"
+        placeholder="Translation will appear here"
+      ></div>
+      <!-- Added element for elapsed time -->
+      <div id="elapsedTime"></div>
+      <!-- Added container for history -->
+      <div id="historyContainer">
+        <div
+          style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          "
+        >
+          <h2>History</h2>
+          <!-- Added Clear History button -->
+          <button
+            id="clearHistoryButton"
+            style="margin-left: 15px; font-size: 0.8em"
+          >
+            Clear All History
+          </button>
+        </div>
+        <!-- History items will be added here -->
+      </div>
+    </div>
+  </body>
+</html>
