@@ -174,93 +174,167 @@ function translate() {
       const decoder = new TextDecoder("utf-8");
       let fullResponseRaw = "";
       let finalData = null;
+      let buffer = ""; // Buffer for incoming data
 
       (async () => {
         try {
+          // Outer try for reader errors
           while (true) {
             const { value, done } = await reader.read();
+
             if (done) {
-              console.log("Stream complete.");
-              if (finalData && finalData.total_duration) {
-                const durationSeconds = (
-                  finalData.total_duration / 1e9
-                ).toFixed(2);
-                elapsedTimeDiv.textContent = `Time elapsed: ${durationSeconds}s`;
-              }
-
-              const renderedFullResponse = marked.parse(fullResponseRaw, {
-                breaks: false,
-              });
-              const newItem = {
-                input: input,
-                outputHtml: renderedFullResponse,
-                model: modelName,
-                timestamp: new Date().toISOString(),
-              };
-
-              try {
-                let history = JSON.parse(
-                  localStorage.getItem(LS_HISTORY_KEY) || "[]"
+              // Process any remaining data in the buffer after stream ends
+              if (buffer.trim()) {
+                console.warn(
+                  "Processing remaining buffer content:",
+                  `"${buffer.trim()}"`
                 );
-                history.unshift(newItem);
-                if (history.length > MAX_HISTORY_ITEMS) {
-                  history = history.slice(0, MAX_HISTORY_ITEMS);
-                }
-                localStorage.setItem(LS_HISTORY_KEY, JSON.stringify(history));
-                renderHistoryItem(newItem, true);
-              } catch (error) {
-                console.error("Error saving history:", error);
-              }
-              stopButton.classList.add("hidden"); // Hide stop button on successful completion
-              break; // Exit the loop when done
-            }
-
-            const chunkText = decoder.decode(value, { stream: true });
-            chunkText.split("\n").forEach((line) => {
-              if (line.trim()) {
                 try {
-                  const data = JSON.parse(line);
+                  const data = JSON.parse(buffer.trim());
+                  // Potentially process last chunk if it contained response or final data
                   if (data.response) {
                     const textChunk = data.response;
                     fullResponseRaw += textChunk;
+                    // Update UI one last time with final part
                     outputDiv.innerHTML = marked.parse(fullResponseRaw, {
                       breaks: false,
                     });
                   }
                   if (data.done) {
-                    finalData = data;
+                    finalData = data; // Capture final data if it was the last thing
                   }
                 } catch (e) {
-                  console.error("Error parsing JSON chunk:", line, e);
+                  console.error(
+                    "Error parsing final buffer content:",
+                    e.message,
+                    `Content: "${buffer.trim()}"`
+                  );
                 }
               }
-            });
+              console.log("Stream complete.");
+              break; // Exit the reading loop
+            }
+
+            buffer += decoder.decode(value, { stream: true }); // Append new data
+
+            // Process buffer line by line based on newline delimiter
+            let newlineIndex;
+            while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+              const line = buffer.substring(0, newlineIndex).trim(); // Extract line up to newline
+              buffer = buffer.substring(newlineIndex + 1); // Remove processed line (and newline) from buffer
+
+              if (line) {
+                // Process non-empty lines
+                try {
+                  const data = JSON.parse(line);
+                  if (data.response) {
+                    const textChunk = data.response;
+                    fullResponseRaw += textChunk;
+                    // Update UI progressively
+                    outputDiv.innerHTML = marked.parse(fullResponseRaw, {
+                      breaks: false,
+                    });
+                  }
+                  // Crucially, check for 'done' status in *any* parsed object
+                  if (data.done) {
+                    finalData = data; // Capture the final status object whenever it arrives
+                  }
+                } catch (e) {
+                  // Log error but continue processing buffer/stream
+                  console.warn(
+                    `Error parsing JSON line: ${e.message}`,
+                    `Line: "${line}"`
+                  );
+                }
+              }
+            } // End while processing buffer for newlines
+          } // End while reading stream
+
+          // --- All stream reading is done, now finalize ---
+
+          // Update elapsed time if finalData was captured correctly
+          if (finalData && finalData.total_duration) {
+            const durationSeconds = (finalData.total_duration / 1e9).toFixed(2);
+            elapsedTimeDiv.textContent = `Time elapsed: ${durationSeconds}s`;
+          } else {
+            console.warn(
+              "Final duration data not found or parsed correctly from stream."
+            );
+            // Avoid overwriting error/stopped messages
+            if (
+              !elapsedTimeDiv.textContent.includes("Error") &&
+              !elapsedTimeDiv.textContent.includes("Stopped")
+            ) {
+              // Set a default message or leave blank if duration is missing
+              elapsedTimeDiv.textContent = "Time elapsed: N/A";
+            }
           }
+
+          // Save to history if we received content
+          if (fullResponseRaw) {
+            const renderedFullResponse = marked.parse(fullResponseRaw, {
+              breaks: false,
+            });
+            const newItem = {
+              input: input,
+              outputHtml: renderedFullResponse,
+              model: modelName,
+              timestamp: new Date().toISOString(),
+            };
+            try {
+              let history = JSON.parse(
+                localStorage.getItem(LS_HISTORY_KEY) || "[]"
+              );
+              history.unshift(newItem);
+              if (history.length > MAX_HISTORY_ITEMS) {
+                history = history.slice(0, MAX_HISTORY_ITEMS);
+              }
+              localStorage.setItem(LS_HISTORY_KEY, JSON.stringify(history));
+              renderHistoryItem(newItem, true);
+            } catch (error) {
+              console.error("Error saving history:", error);
+            }
+          } else {
+            // Handle case where stream completed but no response content was parsed
+            console.log("Stream completed without any response content.");
+            if (
+              !outputDiv.innerHTML &&
+              !elapsedTimeDiv.textContent.includes("Error") &&
+              !elapsedTimeDiv.textContent.includes("Stopped")
+            ) {
+              outputDiv.innerHTML = "<em>Received empty response.</em>";
+            }
+          }
+
+          stopButton.classList.add("hidden"); // Hide stop button on successful completion
         } catch (streamError) {
-          // Handle potential errors during reading the stream
+          // Catch errors from reader.read() itself
           console.error("Error reading stream:", streamError);
           outputDiv.innerHTML = `<span style="color: red;">Error reading response stream.</span>`;
           elapsedTimeDiv.textContent = "Error occurred.";
           stopButton.classList.add("hidden"); // Hide stop button on stream error
         }
-      })();
+      })(); // End async IIFE
     })
     .catch((error) => {
+      // Catch fetch initiation errors, network errors, or AbortError
       if (error.name === "AbortError") {
         console.log("Fetch aborted by user.");
         outputDiv.innerHTML = "<em>Translation stopped.</em>";
         elapsedTimeDiv.textContent = "Stopped.";
-        // Keep stop button visible here, user explicitly stopped it.
+        // Keep stop button visible here
       } else {
-        console.error("Error during translation:", error);
+        console.error("Error during translation fetch/setup:", error);
         outputDiv.innerHTML = `<span style="color: red;">Error: ${error.message}</span>`;
         elapsedTimeDiv.textContent = "Error occurred.";
         stopButton.classList.add("hidden"); // Hide stop button on other errors
       }
     })
     .finally(() => {
+      // Runs after fetch promise settles (after .then or .catch)
       spinner.classList.add("hidden"); // Always hide spinner
       currentAbortController = null; // Always clear controller
+      // Note: stopButton hiding is now handled inside the async IIFE or the .catch block
     });
 }
 
