@@ -22,7 +22,7 @@
       }
 
       .container {
-        max-width: 600px;
+        max-width: 800px;
         margin: 20px auto;
         padding: 20px;
       }
@@ -61,21 +61,21 @@
       }
       /* Style for the output div */
       .output-area {
-        width: 100%;
+        width: 50%;
         margin: 10px 0;
         padding: 10px;
         min-height: 100px;
         border: 1px solid #ccc; /* Mimic textarea border */
         background-color: #f9f9f9; /* Slightly different background */
-        white-space: pre-wrap; /* Preserve whitespace and wrap lines */
+
         box-sizing: border-box; /* Include padding/border in width */
         line-height: 1.3; /* Adjust this value (e.g., 1.2, 1.4) to control spacing */
       }
 
       /* Explicitly reduce margins for paragraphs inside the output area */
       .output-area p {
-        margin-block-start: 0em; /* Adjust as needed */
-        margin-block-end: 0em; /* Adjust as needed */
+        margin-block-start: 1em;
+        margin-block-end: 1em;
       }
       /* Reduce list spacing slightly */
       .output-area ul,
@@ -95,7 +95,7 @@
         margin-bottom: 10px; /* Add some space below dropdowns */
         padding: 5px;
       }
-      /* Adjust container layout if needed */
+
       .container div {
         margin-bottom: 10px; /* Space between rows */
       }
@@ -120,6 +120,7 @@
         border: 1px solid #ccc;
         border-radius: 4px;
         background-color: #e9e9e9;
+        white-space: pre-wrap;
       }
       .history-item-output {
         padding: 5px;
@@ -129,14 +130,123 @@
         line-height: 1.3; /* Match .output-area */
       }
       .history-item-output p {
-        margin-block-start: 0.2em;
-        margin-block-end: 0.2em;
+        margin-block-start: 0.5em;
+        margin-block-end: 0.5em;
       }
       .history-item-output ul,
       .history-item-output ol {
         margin-block-start: 0.3em;
         margin-block-end: 0.3em;
         padding-inline-start: 25px;
+      }
+      .input-output-area {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        /* margin-right: 4px; */
+      }
+      .input-area {
+        width: 50%;
+        margin-right: 10px; /* Space between input and output */
+        padding: 10px;
+        min-height: 100px;
+        border: 1px solid #ccc;
+        white-space: pre-wrap;
+        box-sizing: border-box;
+        line-height: 1.3;
+      }
+
+      #translateButton {
+        background-color: #4caf50; /* Green */
+        color: white;
+        padding: 10px 15px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 1em;
+      }
+      #translateButton:hover {
+        background-color: #45a049; /* Darker green on hover */
+      }
+
+      #stopButton {
+        background-color: #f44336; /* Red */
+        color: white;
+        padding: 10px 15px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 1em;
+        float: right;
+      }
+      #stopButton:hover {
+        background-color: #d32f2f; /* Darker red on hover */
+      }
+      #clearHistoryButton {
+        background-color: #f44336; /* Red */
+        color: white;
+        padding: 5px 10px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.8em;
+      }
+      #clearHistoryButton:hover {
+        background-color: #d32f2f; /* Darker red on hover */
+      }
+
+      /* Style for thought blocks */
+      .thought-block {
+        background-color: #e8f0fe; /* Light blue background */
+        border-left: 3px solid #1967d2; /* Blue left border */
+        padding: 5px 12px 8px 12px; /* Padding for content */
+        margin: 10px 0; /* Add some vertical spacing */
+        border-radius: 4px;
+        position: relative; /* Needed for absolute positioning of label */
+      }
+
+      .thought-header {
+        display: flex;
+        align-items: center;
+        cursor: pointer; /* Indicate clickable header */
+        margin-bottom: 5px; /* Space between header and content */
+      }
+
+      .thought-toggle {
+        display: inline-block;
+        width: 1.5em; /* Fixed width for alignment */
+        font-weight: bold;
+        margin-right: 5px;
+        color: #1967d2;
+        user-select: none; /* Prevent text selection */
+      }
+
+      .thought-label::before {
+        content: "💭 Thinking..."; /* Default label */
+        color: #1967d2; /* Blue text */
+        font-weight: bold;
+        font-size: 0.9em;
+      }
+
+      /* Style for collapsed content */
+      .thought-content.collapsed {
+        display: none;
+      }
+
+      /* Style for completed thoughts - uses text content now */
+      .thought-block.thought-complete .thought-label::before {
+        content: ""; /* Remove the default thinking label */
+      }
+      .thought-block.thought-complete .thought-label {
+        /* Style the duration text */
+        color: #1967d2;
+        font-weight: bold;
+        font-size: 0.9em;
+      }
+
+      /* Slightly distinct style for incomplete blocks during streaming */
+      .thought-block.thought-incomplete {
+        border-left-color: #43fd9a;
       }
 
       /* Responsive design */
@@ -150,6 +260,17 @@
         }
         h1 {
           font-size: 1.4em; /* Adjusted for smaller screens */
+        }
+        .input-output-area {
+          flex-direction: column; /* Stack input and output */
+          width: 100%;
+        }
+        .input-area {
+          width: 100%; /* Full width */
+          margin-right: 0; /* No right margin */
+        }
+        .output-area {
+          width: 100%; /* Full width */
         }
       }
     </style>
@@ -172,7 +293,19 @@
         </select>
       </div>
 
-      <textarea id="inputText" placeholder="Enter text to translate"></textarea>
+      <div class="input-output-area">
+        <textarea
+          id="inputText"
+          class="input-area"
+          placeholder="Enter text to translate"
+        ></textarea>
+        <div
+          id="outputText"
+          class="output-area"
+          placeholder="Translation will appear here"
+        ></div>
+      </div>
+
       <!-- Wrap buttons for easier layout -->
       <div style="position: relative; margin-bottom: 10px">
         <button id="translateButton">Translate</button>
@@ -181,20 +314,9 @@
           >Loading...</span
         >
         <!-- Stop button, initially hidden -->
-        <button
-          id="stopButton"
-          class="hidden"
-          style="float: right; background-color: #f44336; color: white"
-        >
-          Stop
-        </button>
+        <button id="stopButton" class="hidden">Stop</button>
       </div>
 
-      <div
-        id="outputText"
-        class="output-area"
-        placeholder="Translation will appear here"
-      ></div>
       <!-- Elapsed time elmt -->
       <div id="elapsedTime"></div>
       <!-- History container -->

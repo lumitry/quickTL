@@ -11,6 +11,50 @@ const PROMPT =
 // TODO save/read config (+ maybe history?) to a sidecar file
 // TODO should history include timestamps?
 
+// --- Helper function to preprocess thought tags ---
+/**
+ * Process <think> tags into standardized, collapsible HTML blocks.
+ * Handles potentially incomplete tags during streaming.
+ * @param {string} rawText The raw text to preprocess
+ * @returns {string} The preprocessed text with <think> tags replaced
+ */
+function preprocessThoughts(rawText) {
+  // Regex to find <think>...</think> OR <think>... (no closing tag yet)
+  // It replaces the *last* occurrence of an unclosed <think> differently if needed,
+  // but for simplicity, we'll use one structure and update the label later.
+  return rawText
+    .replace(
+      // Match <think>...</think> (non-greedy)
+      // Note that this one collapses the content! This means that, once the thought process is complete, it gets auto-collapsed. I decided to do this by default so that users get an immediate response, even if it's just CoT. When it's done, it'll collapse so they can view the final result.
+      // It's still a little wonky for longer CoT because you might have scrolled down a decent amount by then, but I still prefer this. It also makes reading the history section a whole lot easier.
+      // TODO: add configuration option for this! "Auto-Collapse Thoughts After Completion" or something.
+      /<think>(.*?)<\/think>/gs,
+      `<div class="thought-block">
+       <div class="thought-header">
+         <span class="thought-toggle" role="button" tabindex="0" aria-expanded="false">[+]</span>
+         <span class="thought-label" data-duration-placeholder="true"></span> <!-- Placeholder for label -->
+       </div>
+       <div class="thought-content collapsed">
+         $1 <!-- Complete content -->
+       </div>
+     </div>`
+    )
+    .replace(
+      // Match <think>... (no closing tag) ONLY if not already matched above
+      // This uses a negative lookahead to avoid re-matching complete blocks
+      /<think>((?:(?!<\/think>).)*)$/gs,
+      `<div class="thought-block thought-incomplete">
+       <div class="thought-header">
+         <span class="thought-toggle" role="button" tabindex="0" aria-expanded="true">[-]</span>
+         <span class="thought-label" data-duration-placeholder="true"></span> <!-- Placeholder for label -->
+       </div>
+       <div class="thought-content">
+         $1 <!-- Incomplete content -->
+       </div>
+     </div>`
+    );
+}
+
 // --- Global variable for AbortController ---
 let currentAbortController = null;
 
@@ -230,8 +274,9 @@ function translate() {
                   if (data.response) {
                     const textChunk = data.response;
                     fullResponseRaw += textChunk;
-                    // Update UI progressively
-                    outputDiv.innerHTML = marked.parse(fullResponseRaw, {
+                    // Preprocess thoughts before rendering live update
+                    const processedText = preprocessThoughts(fullResponseRaw);
+                    outputDiv.innerHTML = marked.parse(processedText, {
                       breaks: false,
                     });
                   }
@@ -252,7 +297,37 @@ function translate() {
 
           // --- All stream reading is done, now finalize ---
 
-          // Update elapsed time if finalData was captured correctly
+          let durationText = "Thought Process"; // Default label if no duration
+          // Calculate duration if available (using eval_duration)
+          if (finalData && finalData.eval_duration) {
+            // Use eval_duration (generation time) as proxy for thought time
+            const durationSeconds = (finalData.eval_duration / 1e9).toFixed(2);
+            durationText = `Thought Process (${durationSeconds}s)`;
+          } else if (finalData && finalData.total_duration) {
+            // Fallback to total_duration if eval_duration is missing
+            const durationSeconds = (finalData.total_duration / 1e9).toFixed(2);
+            durationText = `Thought Process (Total: ${durationSeconds}s)`;
+            console.warn(
+              "Using total_duration for thought label as eval_duration is missing."
+            );
+          } else {
+            console.warn("No duration data found for thought label.");
+          }
+
+          // Mark all rendered thought blocks in the output as complete and update label
+          const outputThoughtBlocks =
+            outputDiv.querySelectorAll(".thought-block");
+          outputThoughtBlocks.forEach((block) => {
+            block.classList.remove("thought-incomplete"); // Remove incomplete class if present
+            block.classList.add("thought-complete");
+
+            const label = block.querySelector(".thought-label");
+            if (label) {
+              label.textContent = durationText; // Set the final label text
+            }
+          });
+
+          // Update elapsed time display
           if (finalData && finalData.total_duration) {
             const durationSeconds = (finalData.total_duration / 1e9).toFixed(2);
             elapsedTimeDiv.textContent = `Time elapsed: ${durationSeconds}s`;
@@ -272,12 +347,30 @@ function translate() {
 
           // Save to history if we received content
           if (fullResponseRaw) {
-            const renderedFullResponse = marked.parse(fullResponseRaw, {
+            // Preprocess the final raw text for history
+            const processedTextForHistory = preprocessThoughts(fullResponseRaw);
+
+            // Add complete class and duration label to the HTML string for history
+            let finalHistoryHtml = processedTextForHistory
+              .replace(
+                /class="thought-block.*?"/g, // Match class attribute potentially with incomplete
+                'class="thought-block thought-complete"' // Replace with just complete
+              )
+              .replace(
+                /<span class="thought-label".*?><\/span>/g, // Match label span with potential placeholder attribute
+                `<span class="thought-label">${durationText}</span>` // Replace with final label text
+              );
+
+            const renderedFullResponse = marked.parse(finalHistoryHtml, {
               breaks: false,
             });
+            console.log(
+              "Final raw response for history item:",
+              fullResponseRaw
+            );
             const newItem = {
               input: input,
-              outputHtml: renderedFullResponse,
+              outputHtml: renderedFullResponse, // Save the final processed HTML
               model: modelName,
               timestamp: new Date().toISOString(),
             };
@@ -473,6 +566,72 @@ function setupInputTextArea(inputText) {
   }
 }
 
+// --- Setup function for Thought Block Toggling ---
+function setupThoughtToggling() {
+  // Define the handler function once
+  const handleToggle = (event) => {
+    // Find the header element that was clicked or contains the clicked element
+    const header = event.target.closest(".thought-header");
+    if (!header) return; // Exit if the click wasn't inside a header
+
+    // Find the parent thought block
+    const thoughtBlock = header.closest(".thought-block");
+    if (!thoughtBlock) return; // Should not happen if header is found
+
+    // Find the content and toggle elements within the block
+    const content = thoughtBlock.querySelector(".thought-content");
+    const toggle = header.querySelector(".thought-toggle"); // Find the toggle within the clicked header
+
+    if (content && toggle) {
+      const isCollapsed = content.classList.toggle("collapsed");
+      toggle.textContent = isCollapsed ? "[+]" : "[-]";
+      toggle.setAttribute("aria-expanded", !isCollapsed);
+    }
+  };
+
+  // Define the keydown handler
+  const handleKeydown = (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      // Check if the focused element is the toggle or header itself
+      const header = event.target.closest(".thought-header");
+      const toggle = event.target.closest(".thought-toggle");
+
+      if (header || toggle) {
+        // Check if focus is on header or toggle
+        event.preventDefault(); // Prevent default space scroll or enter submit
+        // Find the header to simulate the click logic correctly
+        const targetHeader = header || toggle.closest(".thought-header");
+        if (targetHeader) {
+          targetHeader.click(); // Simulate a click on the header
+        }
+      }
+    }
+  };
+
+  // Use event delegation on containers that will hold the thought blocks
+  const outputContainer = document.getElementById("outputText");
+  const historyContainer = document.getElementById("historyContainer");
+
+  if (outputContainer) {
+    outputContainer.addEventListener("click", handleToggle);
+  } else {
+    console.error(
+      "Output container #outputText not found for toggle listener."
+    );
+  }
+
+  if (historyContainer) {
+    historyContainer.addEventListener("click", handleToggle);
+  } else {
+    console.error(
+      "History container #historyContainer not found for toggle listener."
+    );
+  }
+
+  // Attach keydown listener to the body to catch focused elements anywhere
+  document.body.addEventListener("keydown", handleKeydown);
+}
+
 // --- DOMContentLoaded Event Listener ---
 document.addEventListener("DOMContentLoaded", function () {
   // Get all necessary elements once
@@ -486,6 +645,7 @@ document.addEventListener("DOMContentLoaded", function () {
   setupActionButtons(elements.translateButton, elements.stopButton);
   setupHistoryControls(elements.clearHistoryButton, elements.historyContainer);
   setupInputTextArea(elements.inputText);
+  setupThoughtToggling();
 
   console.log("QuickTL application initialized.");
 });
