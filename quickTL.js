@@ -15,13 +15,11 @@ const PROMPT =
 /**
  * Process <think> tags into standardized, collapsible HTML blocks.
  * Handles potentially incomplete tags during streaming.
+ * Ignores empty or whitespace-only blocks.
  * @param {string} rawText The raw text to preprocess
  * @returns {string} The preprocessed text with <think> tags replaced
  */
 function preprocessThoughts(rawText) {
-  // Regex to find <think>...</think> OR <think>... (no closing tag yet)
-  // It replaces the *last* occurrence of an unclosed <think> differently if needed,
-  // but for simplicity, we'll use one structure and update the label later.
   return rawText
     .replace(
       // Match <think>...</think> (non-greedy)
@@ -29,29 +27,35 @@ function preprocessThoughts(rawText) {
       // It's still a little wonky for longer CoT because you might have scrolled down a decent amount by then, but I still prefer this. It also makes reading the history section a whole lot easier.
       // TODO: add configuration option for this! "Auto-Collapse Thoughts After Completion" or something.
       /<think>(.*?)<\/think>/gs,
-      `<div class="thought-block">
-       <div class="thought-header">
-         <span class="thought-toggle" role="button" tabindex="0" aria-expanded="false">[+]</span>
-         <span class="thought-label" data-duration-placeholder="true"></span> <!-- Placeholder for label -->
-       </div>
-       <div class="thought-content collapsed">
-         $1 <!-- Complete content -->
-       </div>
-     </div>`
+      // Use a function to check content before replacing
+      // Note: this commit can be reversed if Qwen 3 gets fixed. Currently, using /no_think in your prompt will cause it to output an EMPTY <think> </think> block, which messes up the parsing logic here.
+      // Basically, this is a Qwen 3 exclusive bug fix.
+      (match, content) => {
+        // Check if the captured content is empty or only whitespace
+        if (content.trim() === "") {
+          return ""; // Return empty string to remove the block
+        } else {
+          // Return the standard HTML structure for non-empty blocks
+          return `<div class="thought-block">
+                    <div class="thought-header">
+                      <span class="thought-toggle" role="button" tabindex="0" aria-expanded="false">[+]</span>
+                      <span class="thought-label" data-duration-placeholder="true"></span>
+                    </div>
+                    <div class="thought-content collapsed">${content}</div>
+                  </div>`;
+        }
+      }
     )
     .replace(
-      // Match <think>... (no closing tag) ONLY if not already matched above
-      // This uses a negative lookahead to avoid re-matching complete blocks
+      // Match <think>... (no closing tag) - Keep this as is, might fill later
       /<think>((?:(?!<\/think>).)*)$/gs,
       `<div class="thought-block thought-incomplete">
-       <div class="thought-header">
-         <span class="thought-toggle" role="button" tabindex="0" aria-expanded="true">[-]</span>
-         <span class="thought-label" data-duration-placeholder="true"></span> <!-- Placeholder for label -->
-       </div>
-       <div class="thought-content">
-         $1 <!-- Incomplete content -->
-       </div>
-     </div>`
+         <div class="thought-header">
+           <span class="thought-toggle" role="button" tabindex="0" aria-expanded="true">[-]</span>
+           <span class="thought-label" data-duration-placeholder="true"></span>
+         </div>
+         <div class="thought-content">${"$1"}</div>
+       </div>`
     );
 }
 

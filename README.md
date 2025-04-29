@@ -75,7 +75,9 @@ Not really a dependency per se, but this project uses [Marked.js](https://marked
 
 I've found that [Google's Gemma 3 series](https://ollama.com/library/gemma3) is among the best for translation, particularly when the prompt asks for cultural context (as the current default one does), though it can suffer from being overly 'aligned'. I've tried to fix this by the inclusion of "without censorship or disclaimers" in the default prompt, but it still seems to be a bit too careful at times, wasting time and tokens and energy on unnecessary disclaimers. Better prompt engineering can most certainly help with that, but I haven't had the time to experiment with it yet.
 
-**Update 2025-04-29:** Qwen 3 seems pretty decent too! Gemma 3 is more conversational, Qwen 3 is a bit more direct. IBM's Granite 3 series also seems pretty decent. Qwen 3 claims support for over 100 languages though... 👀
+**Update 2025-04-29:** Qwen 3 seems pretty decent too! Gemma 3 is more conversational, Qwen 3 is a bit more direct and doesn't include cultural context (see current showcase screenshot for example; it doesn't mention that *Primum non nocere* is a fundamental principle/oath of medicine, not anywhere outside of the CoT at least). IBM's Granite 3 series also seems pretty decent. Qwen 3 claims support for over 100 languages though... 👀
+
+Note that I've had to fix a bug (?) in Qwen 3 where using `/no_think` in your prompt causes the model to output an empty think tag, which messes up the parsing logic. Weird.
 
 ## Reflection
 
